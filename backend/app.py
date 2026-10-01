@@ -77,5 +77,39 @@ def review_cases():
         reviews.to_dict(orient="records")
     )
 
+@app.route("/api/students/<student_id>", methods=["GET"])
+def student_details(student_id):
+    df = pd.read_csv(
+        "data/processed/final_moderation_results.csv"
+    )
+
+    student = df[
+        df["Student_ID"].astype(str) == str(student_id)
+    ].copy()
+
+    if student.empty:
+        return jsonify({
+            "error": "Student not found"
+        }), 404
+
+    columns = [
+        "Student_ID",
+        "Subject",
+        "Faculty_ID",
+        "Given_Marks",
+        "Expected_Marks",
+        "Deviation",
+        "Deviation_Percentage",
+        "Anomaly_Score",
+        "Deviation_Direction",
+        "Recommendation",
+        "Requires_Human_Review"
+    ]
+
+    student = student[columns]
+
+    return jsonify(
+        student.to_dict(orient="records")
+    )
 if __name__ == "__main__":
     app.run(debug=True)

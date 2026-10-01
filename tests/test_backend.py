@@ -61,3 +61,29 @@ def test_review_record_structure():
     }
 
     assert required_fields.issubset(data[0].keys())
+
+
+def test_student_details_endpoint():
+    client = app.test_client()
+
+    response = client.get("/api/students/S002")
+
+    assert response.status_code == 200
+
+    data = response.get_json()
+
+    assert isinstance(data, list)
+    assert len(data) == 4
+    assert data[0]["Student_ID"] == "S002"
+
+
+def test_student_not_found():
+    client = app.test_client()
+
+    response = client.get("/api/students/S999")
+
+    assert response.status_code == 404
+
+    data = response.get_json()
+
+    assert data["error"] == "Student not found"
