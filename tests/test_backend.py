@@ -87,3 +87,34 @@ def test_student_not_found():
     data = response.get_json()
 
     assert data["error"] == "Student not found"
+
+def test_faculty_details_endpoint():
+    client = app.test_client()
+
+    response = client.get("/api/faculty/F05")
+
+    assert response.status_code == 200
+
+    data = response.get_json()
+
+    assert data["faculty_id"] == "F05"
+    assert data["total_records"] > 0
+
+    assert "average_given_marks" in data
+    assert "average_expected_marks" in data
+    assert "average_deviation" in data
+    assert "review_cases" in data
+    assert "under_marking" in data
+    assert "over_marking" in data
+
+
+def test_faculty_not_found():
+    client = app.test_client()
+
+    response = client.get("/api/faculty/F99")
+
+    assert response.status_code == 404
+
+    data = response.get_json()
+
+    assert data["error"] == "Faculty not found"

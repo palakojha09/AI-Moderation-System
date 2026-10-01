@@ -111,5 +111,64 @@ def student_details(student_id):
     return jsonify(
         student.to_dict(orient="records")
     )
+
+@app.route("/api/faculty/<faculty_id>", methods=["GET"])
+def faculty_details(faculty_id):
+    df = pd.read_csv(
+        "data/processed/final_moderation_results.csv"
+    )
+
+    faculty = df[
+        df["Faculty_ID"].astype(str) == str(faculty_id)
+    ].copy()
+
+    if faculty.empty:
+        return jsonify({
+            "error": "Faculty not found"
+        }), 404
+
+    total_records = len(faculty)
+
+    average_given_marks = round(
+        faculty["Given_Marks"].mean(), 2
+    )
+
+    average_expected_marks = round(
+        faculty["Expected_Marks"].mean(), 2
+    )
+
+    average_deviation = round(
+        faculty["Deviation"].mean(), 2
+    )
+
+    review_cases = int(
+        faculty["Requires_Human_Review"].sum()
+    )
+
+    under_marking = int(
+        (
+            faculty["Deviation_Direction"]
+            == "Potential Under-marking"
+        ).sum()
+    )
+
+    over_marking = int(
+        (
+            faculty["Deviation_Direction"]
+            == "Potential Over-marking"
+        ).sum()
+    )
+
+    return jsonify({
+        "faculty_id": faculty_id,
+        "total_records": total_records,
+        "average_given_marks": average_given_marks,
+        "average_expected_marks": average_expected_marks,
+        "average_deviation": average_deviation,
+        "review_cases": review_cases,
+        "under_marking": under_marking,
+        "over_marking": over_marking
+    })
+
 if __name__ == "__main__":
     app.run(debug=True)
