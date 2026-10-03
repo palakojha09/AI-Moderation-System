@@ -1,7 +1,9 @@
 from flask import Flask, jsonify
+from flask_cors import CORS
 import pandas as pd
 
 app = Flask(__name__)
+CORS(app, origins=["http://localhost:5173"])
 
 
 @app.route("/api/health", methods=["GET"])
