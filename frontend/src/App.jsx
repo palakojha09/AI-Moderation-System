@@ -15,261 +15,143 @@ import {
 import "./App.css";
 
 const API_URL = "http://127.0.0.1:5000/api";
+const COLORS = ["#3b82f6", "#8b5cf6", "#10b981", "#f59e0b"];
 
-/* =========================================================
-   Helper: normalize student API response
-========================================================= */
-
-function normalizeStudentResponse(data) {
-  let records = [];
-
-  if (Array.isArray(data)) {
-    records = data;
-  } else if (Array.isArray(data?.records)) {
-    records = data.records;
-  } else if (Array.isArray(data?.data)) {
-    records = data.data;
-  } else if (Array.isArray(data?.subjects)) {
-    records = data.subjects;
-  }
-
-  return {
-    ...data,
-    student_id:
-      data?.student_id ||
-      data?.Student_ID ||
-      data?.student ||
-      "Unknown",
-    records,
-  };
+function unwrapList(data) {
+  if (Array.isArray(data)) return data;
+  if (Array.isArray(data?.value)) return data.value;
+  if (Array.isArray(data?.records)) return data.records;
+  if (Array.isArray(data?.reviews)) return data.reviews;
+  if (Array.isArray(data?.data)) return data.data;
+  return [];
 }
 
-/* =========================================================
-   Main App
-========================================================= */
+function StatCard({ title, value, description, type = "" }) {
+  return (
+    <div className={`stat-card ${type}`}>
+      <p className="stat-title">{title}</p>
+      <h3>{Number(value ?? 0).toLocaleString("en-IN")}</h3>
+      <p className="stat-description">{description}</p>
+    </div>
+  );
+}
 
 function App() {
-  /* =======================================================
-     Main dashboard state
-  ======================================================= */
-
   const [summary, setSummary] = useState(null);
   const [reviews, setReviews] = useState([]);
+  const [analytics, setAnalytics] = useState({
+    assessment_analysis: [],
+    module_analysis: [],
+  });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  /* =======================================================
-     Filter state
-  ======================================================= */
-
   const [studentSearch, setStudentSearch] = useState("");
-  const [subjectFilter, setSubjectFilter] = useState("All");
-  const [facultyFilter, setFacultyFilter] = useState("All");
-  const [directionFilter, setDirectionFilter] = useState("All");
-  const [recommendationFilter, setRecommendationFilter] =
-    useState("All");
-
-  /* =======================================================
-     Student analysis state
-  ======================================================= */
+  const [moduleFilter, setModuleFilter] = useState("All");
+  const [typeFilter, setTypeFilter] = useState("All");
+  const [priorityFilter, setPriorityFilter] = useState("All");
 
   const [studentId, setStudentId] = useState("");
   const [studentData, setStudentData] = useState(null);
   const [studentLoading, setStudentLoading] = useState(false);
   const [studentError, setStudentError] = useState("");
 
-  /* =======================================================
-     Faculty analysis state
-  ======================================================= */
-
-  const [facultyId, setFacultyId] = useState("");
-  const [facultyData, setFacultyData] = useState(null);
-  const [facultyLoading, setFacultyLoading] = useState(false);
-  const [facultyError, setFacultyError] = useState("");
-
-  /* =======================================================
-     Load dashboard data
-  ======================================================= */
-
   useEffect(() => {
+    let active = true;
+
     async function loadDashboard() {
       try {
         setLoading(true);
         setError("");
 
-        const [summaryResponse, reviewsResponse] =
+        const [summaryResponse, reviewsResponse, analyticsResponse] =
           await Promise.all([
             fetch(`${API_URL}/summary`),
             fetch(`${API_URL}/reviews`),
+            fetch(`${API_URL}/analytics`),
           ]);
 
-        if (!summaryResponse.ok) {
-          throw new Error("Could not load summary");
+        if (!summaryResponse.ok || !reviewsResponse.ok || !analyticsResponse.ok) {
+          throw new Error("One or more dashboard API requests failed.");
         }
 
-        if (!reviewsResponse.ok) {
-          throw new Error("Could not load reviews");
-        }
+        const [summaryData, reviewsData, analyticsData] = await Promise.all([
+          summaryResponse.json(),
+          reviewsResponse.json(),
+          analyticsResponse.json(),
+        ]);
 
-        const summaryData = await summaryResponse.json();
-        const reviewsData = await reviewsResponse.json();
+        if (!active) return;
 
         setSummary(summaryData);
-
-        /*
-          Backend may return either:
-          [
-            {...},
-            {...}
-          ]
-
-          or:
-
-          {
-            "reviews": [...]
-          }
-
-          Handle both.
-        */
-
-        let reviewRecords = [];
-
-        if (Array.isArray(reviewsData)) {
-          reviewRecords = reviewsData;
-        } else if (Array.isArray(reviewsData?.reviews)) {
-          reviewRecords = reviewsData.reviews;
-        } else if (Array.isArray(reviewsData?.data)) {
-          reviewRecords = reviewsData.data;
-        } else if (Array.isArray(reviewsData?.records)) {
-          reviewRecords = reviewsData.records;
-        }
-
-        setReviews(reviewRecords);
+        setReviews(unwrapList(reviewsData));
+        setAnalytics({
+          assessment_analysis: analyticsData?.assessment_analysis ?? [],
+          module_analysis: analyticsData?.module_analysis ?? [],
+        });
       } catch (err) {
-        console.error("Dashboard error:", err);
-
-        setError(
-          "Could not connect to the backend. Make sure the Flask API is running."
-        );
+        console.error("Dashboard loading error:", err);
+        if (active) {
+          setError(
+            "Could not load OULAD dashboard data. Check that the Flask backend is running at http://127.0.0.1:5000."
+          );
+        }
       } finally {
-        setLoading(false);
+        if (active) setLoading(false);
       }
     }
 
     loadDashboard();
+    return () => {
+      active = false;
+    };
   }, []);
 
-  /* =======================================================
-     Filter options
-  ======================================================= */
+  const modules = useMemo(
+    () => [...new Set(reviews.map((r) => r.code_module).filter(Boolean))].sort(),
+    [reviews]
+  );
 
-  const subjects = useMemo(() => {
-    return [
-      ...new Set(
-        reviews
-          .map((review) => review.Subject)
-          .filter(Boolean)
-      ),
-    ].sort();
-  }, [reviews]);
+  const assessmentTypes = useMemo(
+    () =>
+      [...new Set(reviews.map((r) => r.assessment_type).filter(Boolean))].sort(),
+    [reviews]
+  );
 
-  const faculties = useMemo(() => {
-    return [
-      ...new Set(
-        reviews
-          .map((review) => review.Faculty_ID)
-          .filter(Boolean)
-      ),
-    ].sort();
-  }, [reviews]);
-
-  const directions = useMemo(() => {
-    return [
-      ...new Set(
-        reviews
-          .map((review) => review.Deviation_Direction)
-          .filter(Boolean)
-      ),
-    ].sort();
-  }, [reviews]);
-
-  const recommendations = useMemo(() => {
-    return [
-      ...new Set(
-        reviews
-          .map((review) => review.Recommendation)
-          .filter(Boolean)
-      ),
-    ].sort();
-  }, [reviews]);
-
-  /* =======================================================
-     Filter review cases
-  ======================================================= */
+  const priorities = useMemo(
+    () => [...new Set(reviews.map((r) => r.Review_Priority).filter(Boolean))].sort(),
+    [reviews]
+  );
 
   const filteredReviews = useMemo(() => {
-    return reviews.filter((review) => {
-      const student =
-        String(review.Student_ID || "").toLowerCase();
+    const query = studentSearch.trim().toLowerCase();
 
-      const matchesStudent = student.includes(
-        studentSearch.toLowerCase()
-      );
+    return reviews.filter((record) => {
+      const matchesStudent =
+        !query || String(record.id_student ?? "").toLowerCase().includes(query);
+      const matchesModule =
+        moduleFilter === "All" || record.code_module === moduleFilter;
+      const matchesType =
+        typeFilter === "All" || record.assessment_type === typeFilter;
+      const matchesPriority =
+        priorityFilter === "All" || record.Review_Priority === priorityFilter;
 
-      const matchesSubject =
-        subjectFilter === "All" ||
-        review.Subject === subjectFilter;
-
-      const matchesFaculty =
-        facultyFilter === "All" ||
-        review.Faculty_ID === facultyFilter;
-
-      const matchesDirection =
-        directionFilter === "All" ||
-        review.Deviation_Direction === directionFilter;
-
-      const matchesRecommendation =
-        recommendationFilter === "All" ||
-        review.Recommendation === recommendationFilter;
-
-      return (
-        matchesStudent &&
-        matchesSubject &&
-        matchesFaculty &&
-        matchesDirection &&
-        matchesRecommendation
-      );
+      return matchesStudent && matchesModule && matchesType && matchesPriority;
     });
-  }, [
-    reviews,
-    studentSearch,
-    subjectFilter,
-    facultyFilter,
-    directionFilter,
-    recommendationFilter,
-  ]);
-
-  /* =======================================================
-     Reset filters
-  ======================================================= */
+  }, [reviews, studentSearch, moduleFilter, typeFilter, priorityFilter]);
 
   function resetFilters() {
     setStudentSearch("");
-    setSubjectFilter("All");
-    setFacultyFilter("All");
-    setDirectionFilter("All");
-    setRecommendationFilter("All");
+    setModuleFilter("All");
+    setTypeFilter("All");
+    setPriorityFilter("All");
   }
 
-  /* =======================================================
-     Student API search
-  ======================================================= */
-
   async function searchStudent() {
-    const id = studentId.trim().toUpperCase();
+    const id = studentId.trim();
 
-    if (!id) {
-      setStudentError("Please enter a Student ID.");
+    if (!/^\d+$/.test(id)) {
+      setStudentError("Enter a valid numeric OULAD student ID.");
       setStudentData(null);
       return;
     }
@@ -279,1191 +161,411 @@ function App() {
     setStudentData(null);
 
     try {
-      const response = await fetch(
-        `${API_URL}/students/${id}`
-      );
-
-      if (!response.ok) {
-        throw new Error("Student not found");
-      }
+      const response = await fetch(`${API_URL}/students/${encodeURIComponent(id)}`);
+      if (!response.ok) throw new Error("Student not found");
 
       const data = await response.json();
+      const records = unwrapList(data);
 
-      console.log("Student API response:", data);
-
-      const normalizedData =
-        normalizeStudentResponse(data);
-
-      if (normalizedData.records.length === 0) {
-        setStudentError(
-          "Student was found, but no subject records were returned."
-        );
+      if (records.length === 0) {
+        setStudentError("No assessment records were returned for this student.");
+      } else {
+        setStudentData({ student_id: id, records });
       }
-
-      setStudentData(normalizedData);
     } catch (err) {
-      console.error("Student API error:", err);
-
-      setStudentError(
-        "Student not found. Try an ID such as S002."
-      );
-
-      setStudentData(null);
+      console.error("Student lookup error:", err);
+      setStudentError("Student not found or the API request failed. Check the ID and try again.");
     } finally {
       setStudentLoading(false);
     }
   }
 
-  /* =======================================================
-     Faculty API search
-  ======================================================= */
+  const detectionChartData = summary
+    ? [
+        { name: "Statistical", value: Number(summary.statistical_anomalies ?? 0) },
+        { name: "Isolation Forest", value: Number(summary.isolation_forest_anomalies ?? 0) },
+      ]
+    : [];
 
-  async function searchFaculty() {
-    const id = facultyId.trim().toUpperCase();
-
-    if (!id) {
-      setFacultyError("Please enter a Faculty ID.");
-      setFacultyData(null);
-      return;
-    }
-
-    setFacultyLoading(true);
-    setFacultyError("");
-    setFacultyData(null);
-
-    try {
-      const response = await fetch(
-        `${API_URL}/faculty/${id}`
-      );
-
-      if (!response.ok) {
-        throw new Error("Faculty not found");
-      }
-
-      const data = await response.json();
-
-      console.log("Faculty API response:", data);
-
-      setFacultyData(data);
-    } catch (err) {
-      console.error("Faculty API error:", err);
-
-      setFacultyError(
-        "Faculty not found. Try an ID such as F07."
-      );
-
-      setFacultyData(null);
-    } finally {
-      setFacultyLoading(false);
-    }
-  }
-
-  /* =======================================================
-     Loading screen
-  ======================================================= */
+  const recommendationChartData = summary
+    ? [
+        { name: "Review Recommended", value: Number(summary.medium_reviews ?? 0) },
+        { name: "Strong Review", value: Number(summary.strong_reviews ?? 0) },
+      ]
+    : [];
 
   if (loading) {
     return (
       <div className="app">
         <div className="loading">
-          <h2>AI Moderation System</h2>
-          <p>Loading dashboard...</p>
+          <h2>AI Moderation Recommendation System</h2>
+          <p>Loading OULAD assessment data...</p>
         </div>
       </div>
     );
   }
 
-  /* =======================================================
-     Error screen
-  ======================================================= */
-
-  if (error) {
+  if (error || !summary) {
     return (
       <div className="app">
         <div className="error-box">
-          <h2>AI Moderation System</h2>
-
-          <p>{error}</p>
-
-          <p className="hint">
-            Backend should be running at
-            http://127.0.0.1:5000
-          </p>
+          <h2>AI Moderation Recommendation System</h2>
+          <p>{error || "Dashboard data is unavailable."}</p>
+          <p className="hint">Backend URL: {API_URL}</p>
         </div>
       </div>
     );
   }
 
-  /* =======================================================
-     Chart data
-  ======================================================= */
-
-  const anomalyChartData = summary
-    ? [
-        {
-          name: "Normal",
-          value:
-            Number(summary.total_records || 0) -
-            Number(summary.anomalies || 0),
-        },
-        {
-          name: "Anomalies",
-          value: Number(summary.anomalies || 0),
-        },
-      ]
-    : [];
-
-  const directionChartData = summary
-    ? [
-        {
-          name: "Under-marking",
-          value: Number(summary.under_marking || 0),
-        },
-        {
-          name: "Over-marking",
-          value: Number(summary.over_marking || 0),
-        },
-      ]
-    : [];
-
-  const recommendationChartData = [
-    {
-      name: "Strong Review",
-      value: reviews.filter(
-        (review) =>
-          review.Recommendation ===
-          "Strong Review Recommended"
-      ).length,
-    },
-    {
-      name: "Review",
-      value: reviews.filter(
-        (review) =>
-          review.Recommendation ===
-          "Review Recommended"
-      ).length,
-    },
-  ];
-
-  /* =======================================================
-     Main UI
-  ======================================================= */
-
   return (
     <div className="app">
-
-      {/* =================================================
-          Header
-      ================================================= */}
-
       <header className="header">
-
         <div>
-          <h1>AI Moderation System</h1>
-
-          <p>
-            AI-assisted detection of abnormal marks deviation
-          </p>
+          <h1>AI Moderation Recommendation System</h1>
+          <p>OULAD-based detection of unusual assessment-score patterns</p>
         </div>
-
         <div className="status">
-          <span className="status-dot"></span>
-          System Connected
+          <span className="status-dot" />
+          OULAD Dataset Connected
         </div>
-
       </header>
 
-      {/* =================================================
-          Dashboard
-      ================================================= */}
-
       <main className="dashboard">
-
-        {/* Welcome */}
-
         <section className="welcome">
-
           <h2>Moderation Dashboard</h2>
-
           <p>
-            Identify unusual marks deviations and prioritize
-            cases for human review.
+            Explore statistical and machine-learning flags, inspect assessment
+            records, and prioritize cases for human review.
           </p>
-
+          <p className="oulad-disclaimer">
+            These are anomaly-based review recommendations, not confirmed cases
+            of unfair marking.
+          </p>
         </section>
 
-        {/* =================================================
-            Summary Cards
-        ================================================= */}
-
         <section className="stats-grid">
-
           <StatCard
-            title="Total Records"
+            title="Assessment Records"
             value={summary.total_records}
-            description="Marks records analyzed"
+            description="Valid OULAD assessment scores"
           />
-
           <StatCard
-            title="Detected Anomalies"
-            value={summary.anomalies}
-            description="Records with injected anomalies"
+            title="Statistical Flags"
+            value={summary.statistical_anomalies}
+            description="Flagged by statistical detection"
             type="warning"
           />
-
+          <StatCard
+            title="Isolation Forest Flags"
+            value={summary.isolation_forest_anomalies}
+            description="Flagged by the ML model"
+            type="info"
+          />
           <StatCard
             title="Human Review Cases"
             value={summary.review_cases}
-            description="Cases requiring review"
+            description={`${summary.review_rate}% of analyzed records`}
             type="danger"
           />
-
           <StatCard
-            title="Under-marking"
-            value={summary.under_marking}
-            description="Potential under-marking cases"
-            type="info"
-          />
-
-          <StatCard
-            title="Over-marking"
-            value={summary.over_marking}
-            description="Potential over-marking cases"
+            title="Strong Review"
+            value={summary.strong_reviews}
+            description="Flagged by both detection methods"
             type="success"
           />
-
         </section>
-
-        {/* =================================================
-            Review Cases
-        ================================================= */}
 
         <section className="panel">
-
           <div className="panel-header">
-
             <div>
-
-              <h2>
-                Cases Requiring Human Review
-              </h2>
-
-              <p>
-                AI-generated recommendations for
-                faculty/moderation review.
-              </p>
-
+              <h2>Cases Requiring Human Review</h2>
+              <p>Filter flagged OULAD student-assessment records.</p>
             </div>
-
-            <span className="count-badge">
-              {filteredReviews.length} Cases
-            </span>
-
+            <span className="count-badge">{filteredReviews.length.toLocaleString("en-IN")} Cases</span>
           </div>
-
-          {/* Filters */}
 
           <div className="filters">
-
             <div className="filter-group search-group">
-
-              <label htmlFor="student-search">
-                Search Student
-              </label>
-
+              <label htmlFor="student-filter">Student ID</label>
               <input
-                id="student-search"
+                id="student-filter"
                 type="text"
-                placeholder="e.g. S002"
+                inputMode="numeric"
+                placeholder="Search numeric student ID"
                 value={studentSearch}
-                onChange={(event) =>
-                  setStudentSearch(event.target.value)
-                }
+                onChange={(e) => setStudentSearch(e.target.value)}
               />
-
             </div>
 
             <div className="filter-group">
-
-              <label htmlFor="subject-filter">
-                Subject
-              </label>
-
-              <select
-                id="subject-filter"
-                value={subjectFilter}
-                onChange={(event) =>
-                  setSubjectFilter(event.target.value)
-                }
-              >
-
-                <option value="All">
-                  All Subjects
-                </option>
-
-                {subjects.map((subject) => (
-                  <option
-                    key={subject}
-                    value={subject}
-                  >
-                    {subject}
-                  </option>
-                ))}
-
+              <label htmlFor="module-filter">Module</label>
+              <select id="module-filter" value={moduleFilter} onChange={(e) => setModuleFilter(e.target.value)}>
+                <option value="All">All Modules</option>
+                {modules.map((module) => <option key={module} value={module}>{module}</option>)}
               </select>
-
             </div>
 
             <div className="filter-group">
-
-              <label htmlFor="faculty-filter">
-                Faculty
-              </label>
-
-              <select
-                id="faculty-filter"
-                value={facultyFilter}
-                onChange={(event) =>
-                  setFacultyFilter(event.target.value)
-                }
-              >
-
-                <option value="All">
-                  All Faculty
-                </option>
-
-                {faculties.map((faculty) => (
-                  <option
-                    key={faculty}
-                    value={faculty}
-                  >
-                    {faculty}
-                  </option>
-                ))}
-
+              <label htmlFor="type-filter">Assessment Type</label>
+              <select id="type-filter" value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}>
+                <option value="All">All Types</option>
+                {assessmentTypes.map((type) => <option key={type} value={type}>{type}</option>)}
               </select>
-
             </div>
 
             <div className="filter-group">
-
-              <label htmlFor="direction-filter">
-                Direction
-              </label>
-
-              <select
-                id="direction-filter"
-                value={directionFilter}
-                onChange={(event) =>
-                  setDirectionFilter(event.target.value)
-                }
-              >
-
-                <option value="All">
-                  All Directions
-                </option>
-
-                {directions.map((direction) => (
-                  <option
-                    key={direction}
-                    value={direction}
-                  >
-                    {direction}
-                  </option>
-                ))}
-
+              <label htmlFor="priority-filter">Review Priority</label>
+              <select id="priority-filter" value={priorityFilter} onChange={(e) => setPriorityFilter(e.target.value)}>
+                <option value="All">All Priorities</option>
+                {priorities.map((priority) => <option key={priority} value={priority}>{priority}</option>)}
               </select>
-
             </div>
 
-            <div className="filter-group">
-
-              <label htmlFor="recommendation-filter">
-                Recommendation
-              </label>
-
-              <select
-                id="recommendation-filter"
-                value={recommendationFilter}
-                onChange={(event) =>
-                  setRecommendationFilter(
-                    event.target.value
-                  )
-                }
-              >
-
-                <option value="All">
-                  All Recommendations
-                </option>
-
-                {recommendations.map(
-                  (recommendation) => (
-                    <option
-                      key={recommendation}
-                      value={recommendation}
-                    >
-                      {recommendation}
-                    </option>
-                  )
-                )}
-
-              </select>
-
-            </div>
-
-            <button
-              type="button"
-              className="reset-button"
-              onClick={resetFilters}
-            >
+            <button type="button" className="reset-button" onClick={resetFilters}>
               Reset Filters
             </button>
-
           </div>
-
-          {/* Filter information */}
 
           <div className="filter-info">
-
-            Showing{" "}
-            <strong>
-              {Math.min(filteredReviews.length, 20)}
-            </strong>{" "}
-            of{" "}
-            <strong>
-              {filteredReviews.length}
-            </strong>{" "}
-            matching cases
-
+            Showing <strong>{Math.min(filteredReviews.length, 50)}</strong> of{" "}
+            <strong>{filteredReviews.length.toLocaleString("en-IN")}</strong> matching cases
           </div>
-
-          {/* Review table */}
 
           <div className="table-container">
-
             <table>
-
               <thead>
-
                 <tr>
-                  <th>Student</th>
-                  <th>Subject</th>
-                  <th>Faculty</th>
-                  <th>Given</th>
-                  <th>Expected</th>
+                  <th>Student ID</th>
+                  <th>Assessment</th>
+                  <th>Module</th>
+                  <th>Type</th>
+                  <th>Score</th>
+                  <th>Median</th>
                   <th>Deviation</th>
-                  <th>Direction</th>
-                  <th>Recommendation</th>
+                  <th>Priority</th>
+                  <th>Detection</th>
                 </tr>
-
               </thead>
-
               <tbody>
-
-                {filteredReviews
-                  .slice(0, 20)
-                  .map((review) => {
-
-                    const given = Number(
-                      review.Given_Marks || 0
-                    );
-
-                    const expected = Number(
-                      review.Expected_Marks || 0
-                    );
-
-                    const deviation = Number(
-                      review.Deviation || 0
-                    );
-
-                    return (
-                      <tr
-                        key={`${review.Student_ID}-${review.Subject}`}
-                      >
-
-                        <td>
-                          {review.Student_ID}
-                        </td>
-
-                        <td>
-                          {review.Subject}
-                        </td>
-
-                        <td>
-                          {review.Faculty_ID}
-                        </td>
-
-                        <td>
-                          {given.toFixed(1)}
-                        </td>
-
-                        <td>
-                          {expected.toFixed(1)}
-                        </td>
-
-                        <td
-                          className={
-                            deviation < 0
-                              ? "negative"
-                              : "positive"
-                          }
-                        >
-                          {deviation > 0 ? "+" : ""}
-                          {deviation.toFixed(1)}
-                        </td>
-
-                        <td>
-
-                          <span
-                            className={`direction ${
-                              review.Deviation_Direction ===
-                              "Potential Under-marking"
-                                ? "under"
-                                : review.Deviation_Direction ===
-                                    "Potential Over-marking"
-                                  ? "over"
-                                  : "normal"
-                            }`}
-                          >
-                            {review.Deviation_Direction}
-                          </span>
-
-                        </td>
-
-                        <td>
-
-                          <span
-                            className={`recommendation ${
-                              review.Recommendation ===
-                              "Strong Review Recommended"
-                                ? "strong"
-                                : "review"
-                            }`}
-                          >
-                            {review.Recommendation}
-                          </span>
-
-                        </td>
-
-                      </tr>
-                    );
-                  })}
-
+                {filteredReviews.slice(0, 50).map((record, index) => {
+                  const deviation = Number(record.Score_Deviation ?? 0);
+                  return (
+                    <tr key={`${record.id_student}-${record.id_assessment}-${index}`}>
+                      <td>{record.id_student}</td>
+                      <td>{record.id_assessment}</td>
+                      <td>{record.code_module}</td>
+                      <td>{record.assessment_type}</td>
+                      <td>{Number(record.score ?? 0).toFixed(1)}</td>
+                      <td>{Number(record.Assessment_Median ?? 0).toFixed(1)}</td>
+                      <td className={deviation < 0 ? "negative" : "positive"}>
+                        {deviation > 0 ? "+" : ""}{deviation.toFixed(1)}
+                      </td>
+                      <td>
+                        <span className={`recommendation ${record.Review_Priority === "High" ? "strong" : "review"}`}>
+                          {record.Review_Priority ?? "N/A"}
+                        </span>
+                      </td>
+                      <td className="oulad-source">{record.Detection_Source ?? "N/A"}</td>
+                    </tr>
+                  );
+                })}
                 {filteredReviews.length === 0 && (
-
-                  <tr>
-
-                    <td
-                      colSpan="8"
-                      className="no-results"
-                    >
-                      No review cases match the selected
-                      filters.
-                    </td>
-
-                  </tr>
-
+                  <tr><td colSpan="9" className="no-results">No cases match the selected filters.</td></tr>
                 )}
-
               </tbody>
-
             </table>
-
           </div>
-
-          {filteredReviews.length > 20 && (
-
-            <p className="table-note">
-
-              Showing the first 20 of{" "}
-              {filteredReviews.length} matching cases.
-
-            </p>
-
+          {filteredReviews.length > 50 && (
+            <p className="table-note">Showing the first 50 cases. Use filters to narrow the results.</p>
           )}
-
         </section>
 
-        {/* =================================================
-            Analytics
-        ================================================= */}
-
         <section className="analytics">
-
           <div className="analytics-header">
-
-            <h2>
-              Analytics Overview
-            </h2>
-
-            <p>
-              Visual summary of anomaly detection and
-              moderation recommendations.
-            </p>
-
+            <h2>Analytics Overview</h2>
+            <p>Distribution of detection flags and human-review recommendations.</p>
           </div>
 
           <div className="charts-grid">
-
-            {/* Anomaly Overview */}
-
             <div className="chart-card">
-
-              <h3>
-                Anomaly Overview
-              </h3>
-
-              <ResponsiveContainer
-                width="100%"
-                height={280}
-              >
-
-                <BarChart
-                  data={anomalyChartData}
-                >
-
-                  <CartesianGrid
-                    strokeDasharray="3 3"
-                  />
-
-                  <XAxis
-                    dataKey="name"
-                  />
-
+              <h3>Detection Method Comparison</h3>
+              <ResponsiveContainer width="100%" height={280}>
+                <BarChart data={detectionChartData}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="name" />
                   <YAxis />
-
                   <Tooltip />
-
-                  <Bar
-                    dataKey="value"
-                    fill="#3b82f6"
-                  />
-
+                  <Bar dataKey="value" fill="#3b82f6" radius={[6, 6, 0, 0]} />
                 </BarChart>
-
               </ResponsiveContainer>
-
             </div>
 
-            {/* Marking Direction */}
-
             <div className="chart-card">
-
-              <h3>
-                Marking Direction
-              </h3>
-
-              <ResponsiveContainer
-                width="100%"
-                height={280}
-              >
-
+              <h3>Review Recommendation Split</h3>
+              <ResponsiveContainer width="100%" height={280}>
                 <PieChart>
-
-                  <Pie
-                    data={directionChartData}
-                    dataKey="value"
-                    nameKey="name"
-                    cx="50%"
-                    cy="50%"
-                    outerRadius={90}
-                    label
-                  >
-
-                    <Cell fill="#8b5cf6" />
-                    <Cell fill="#10b981" />
-
+                  <Pie data={recommendationChartData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={90} label>
+                    {recommendationChartData.map((entry, index) => (
+                      <Cell key={entry.name} fill={COLORS[index]} />
+                    ))}
                   </Pie>
-
                   <Tooltip />
-
                   <Legend />
-
                 </PieChart>
-
               </ResponsiveContainer>
-
             </div>
-
-            {/* Review Recommendations */}
 
             <div className="chart-card">
-
-              <h3>
-                Review Recommendations
-              </h3>
-
-              <ResponsiveContainer
-                width="100%"
-                height={280}
-              >
-
-                <BarChart
-                  data={recommendationChartData}
-                >
-
-                  <CartesianGrid
-                    strokeDasharray="3 3"
-                  />
-
-                  <XAxis
-                    dataKey="name"
-                  />
-
+              <h3>Review Cases by Assessment Type</h3>
+              <ResponsiveContainer width="100%" height={280}>
+                <BarChart data={analytics.assessment_analysis}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="assessment_type" />
                   <YAxis />
-
                   <Tooltip />
-
-                  <Bar
-                    dataKey="value"
-                    fill="#ef4444"
-                  />
-
+                  <Legend />
+                  <Bar dataKey="review_cases" name="Review cases" fill="#8b5cf6" radius={[6, 6, 0, 0]} />
                 </BarChart>
-
               </ResponsiveContainer>
-
             </div>
 
+            <div className="chart-card">
+              <h3>Review Cases by Module</h3>
+              <ResponsiveContainer width="100%" height={280}>
+                <BarChart data={analytics.module_analysis}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="code_module" />
+                  <YAxis />
+                  <Tooltip />
+                  <Bar dataKey="review_cases" name="Review cases" fill="#10b981" radius={[6, 6, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
           </div>
-
         </section>
 
-        {/* =================================================
-            Student & Faculty Analysis
-        ================================================= */}
-
         <section className="analysis-section">
-
           <div className="analysis-header">
-
-            <h2>
-              Student & Faculty Analysis
-            </h2>
-
-            <p>
-              Inspect individual student records and
-              faculty-level marking patterns.
-            </p>
-
+            <h2>Student Assessment Analysis</h2>
+            <p>Look up a student to inspect their assessment-level scores and review flags.</p>
           </div>
 
-          <div className="analysis-grid">
-
-            {/* =================================================
-                Student Analysis
-            ================================================= */}
-
+          <div className="analysis-grid oulad-analysis-grid">
             <div className="analysis-card">
-
-              <h3>
-                Student Analysis
-              </h3>
-
+              <h3>Student Lookup</h3>
               <p className="analysis-description">
-                Enter a Student ID to view subject-wise
-                marks and deviations.
+                Enter a numeric student ID from the Open University Learning Analytics Dataset.
               </p>
-
               <div className="analysis-search">
-
                 <input
                   type="text"
-                  placeholder="e.g. S002"
+                  inputMode="numeric"
+                  placeholder="e.g. 334333"
                   value={studentId}
-                  onChange={(event) =>
-                    setStudentId(event.target.value)
-                  }
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") {
-                      searchStudent();
-                    }
-                  }}
+                  onChange={(e) => setStudentId(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") searchStudent(); }}
                 />
-
-                <button
-                  type="button"
-                  onClick={searchStudent}
-                >
-                  Search
+                <button type="button" onClick={searchStudent} disabled={studentLoading}>
+                  {studentLoading ? "Searching..." : "Search"}
                 </button>
-
               </div>
 
-              {studentLoading && (
-                <p className="analysis-status">
-                  Loading student data...
-                </p>
-              )}
-
-              {studentError && (
-                <p className="analysis-error">
-                  {studentError}
-                </p>
-              )}
+              {studentError && <p className="analysis-error">{studentError}</p>}
+              {studentLoading && <p className="analysis-status">Loading student assessment records...</p>}
 
               {studentData && (
                 <div className="analysis-result">
-
                   <div className="result-title">
-
-                    <strong>
-                      Student{" "}
-                      {studentData.student_id}
-                    </strong>
-
+                    <strong>Student {studentData.student_id}</strong>
+                    <span>{studentData.records.length} assessment record(s)</span>
                   </div>
-
-                  {studentData.records &&
-                  studentData.records.length > 0 ? (
-                    <div className="student-table-container">
-
-                      <table className="student-table">
-
-                        <thead>
-
-                          <tr>
-                            <th>Subject</th>
-                            <th>Given</th>
-                            <th>Expected</th>
-                            <th>Deviation</th>
-                            <th>Review</th>
-                          </tr>
-
-                        </thead>
-
-                        <tbody>
-
-                          {(studentData.records || []).map(
-                            (record, index) => {
-
-                              const given = Number(
-                                record.Given_Marks ??
-                                record.given_marks ??
-                                0
-                              );
-
-                              const expected = Number(
-                                record.Expected_Marks ??
-                                record.expected_marks ??
-                                0
-                              );
-
-                              const deviation =
-                                Number(
-                                  record.Deviation ??
-                                  record.deviation ??
-                                  0
-                                );
-
-                              const requiresReview =
-                                Boolean(
-                                  record.Requires_Human_Review ??
-                                  record.requires_human_review ??
-                                  false
-                                );
-
-                              return (
-                                <tr
-                                  key={`${record.Subject || "subject"}-${index}`}
-                                >
-
-                                  <td>
-                                    {record.Subject ||
-                                      record.subject ||
-                                      "N/A"}
-                                  </td>
-
-                                  <td>
-                                    {given.toFixed(1)}
-                                  </td>
-
-                                  <td>
-                                    {expected.toFixed(1)}
-                                  </td>
-
-                                  <td
-                                    className={
-                                      deviation < 0
-                                        ? "negative"
-                                        : "positive"
-                                    }
-                                  >
-                                    {deviation > 0
-                                      ? "+"
-                                      : ""}
-                                    {deviation.toFixed(1)}
-                                  </td>
-
-                                  <td>
-
-                                    {requiresReview ? (
-                                      <span className="review-yes">
-                                        Review
-                                      </span>
-                                    ) : (
-                                      <span className="review-no">
-                                        Normal
-                                      </span>
-                                    )}
-
-                                  </td>
-
-                                </tr>
-                              );
-                            }
-                          )}
-
-                        </tbody>
-
-                      </table>
-
-                    </div>
-                  ) : (
-                    <p className="analysis-status">
-                      No subject records available for this
-                      student.
-                    </p>
-                  )}
-
+                  <div className="student-table-container">
+                    <table className="student-table">
+                      <thead>
+                        <tr>
+                          <th>Assessment</th>
+                          <th>Module</th>
+                          <th>Type</th>
+                          <th>Score</th>
+                          <th>Deviation</th>
+                          <th>Priority</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {studentData.records.map((record, index) => {
+                          const deviation = Number(record.Score_Deviation ?? 0);
+                          const needsReview = Boolean(record.Requires_Human_Review) ||
+                            record.Review_Priority === "High" ||
+                            record.Review_Priority === "Medium";
+                          return (
+                            <tr key={`${record.id_assessment}-${index}`}>
+                              <td>{record.id_assessment}</td>
+                              <td>{record.code_module}</td>
+                              <td>{record.assessment_type}</td>
+                              <td>{Number(record.score ?? 0).toFixed(1)}</td>
+                              <td className={deviation < 0 ? "negative" : "positive"}>
+                                {deviation > 0 ? "+" : ""}{deviation.toFixed(1)}
+                              </td>
+                              <td>
+                                <span className={needsReview ? "review-yes" : "review-no"}>
+                                  {record.Review_Priority ?? (needsReview ? "Review" : "Normal")}
+                                </span>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               )}
-
             </div>
-
-            {/* =================================================
-                Faculty Analysis
-            ================================================= */}
 
             <div className="analysis-card">
-
-              <h3>
-                Faculty Analysis
-              </h3>
-
+              <h3>Assessment Type Summary</h3>
               <p className="analysis-description">
-                Enter a Faculty ID to examine marking
-                statistics and review cases.
+                Review frequency across the three assessment categories in OULAD.
               </p>
-
-              <div className="analysis-search">
-
-                <input
-                  type="text"
-                  placeholder="e.g. F07"
-                  value={facultyId}
-                  onChange={(event) =>
-                    setFacultyId(event.target.value)
-                  }
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") {
-                      searchFaculty();
-                    }
-                  }}
-                />
-
-                <button
-                  type="button"
-                  onClick={searchFaculty}
-                >
-                  Search
-                </button>
-
+              <div className="oulad-summary-list">
+                {analytics.assessment_analysis.map((item) => (
+                  <div className="oulad-summary-row" key={item.assessment_type}>
+                    <div>
+                      <strong>{item.assessment_type}</strong>
+                      <span>{Number(item.review_cases).toLocaleString("en-IN")} review cases / {Number(item.total_records).toLocaleString("en-IN")} records</span>
+                    </div>
+                    <strong>{Number(item.review_rate).toFixed(2)}%</strong>
+                  </div>
+                ))}
               </div>
-
-              {facultyLoading && (
-                <p className="analysis-status">
-                  Loading faculty data...
-                </p>
-              )}
-
-              {facultyError && (
-                <p className="analysis-error">
-                  {facultyError}
-                </p>
-              )}
-
-              {facultyData && (
-                <div className="faculty-result">
-
-                  <div className="result-title">
-
-                    <strong>
-                      Faculty{" "}
-                      {facultyData.faculty_id ||
-                        facultyData.Faculty_ID ||
-                        facultyId.toUpperCase()}
-                    </strong>
-
-                  </div>
-
-                  <div className="faculty-stats">
-
-                    <div className="faculty-stat">
-                      <span>Total Records</span>
-                      <strong>
-                        {facultyData.total_records ?? 0}
-                      </strong>
-                    </div>
-
-                    <div className="faculty-stat">
-                      <span>Average Given</span>
-                      <strong>
-                        {Number(
-                          facultyData.average_given_marks ??
-                          0
-                        ).toFixed(2)}
-                      </strong>
-                    </div>
-
-                    <div className="faculty-stat">
-                      <span>Average Expected</span>
-                      <strong>
-                        {Number(
-                          facultyData.average_expected_marks ??
-                          0
-                        ).toFixed(2)}
-                      </strong>
-                    </div>
-
-                    <div className="faculty-stat">
-                      <span>Average Deviation</span>
-                      <strong>
-                        {Number(
-                          facultyData.average_deviation ??
-                          0
-                        ) > 0
-                          ? "+"
-                          : ""}
-                        {Number(
-                          facultyData.average_deviation ??
-                          0
-                        ).toFixed(2)}
-                      </strong>
-                    </div>
-
-                    <div className="faculty-stat">
-                      <span>Review Cases</span>
-                      <strong>
-                        {facultyData.review_cases ?? 0}
-                      </strong>
-                    </div>
-
-                    <div className="faculty-stat">
-                      <span>Under-marking</span>
-                      <strong>
-                        {facultyData.under_marking ?? 0}
-                      </strong>
-                    </div>
-
-                    <div className="faculty-stat">
-                      <span>Over-marking</span>
-                      <strong>
-                        {facultyData.over_marking ?? 0}
-                      </strong>
-                    </div>
-
-                  </div>
-
-                </div>
-              )}
-
+              <p className="oulad-note">
+                Review rates describe model-flagged records, not confirmed marking errors.
+              </p>
             </div>
-
           </div>
-
         </section>
-
-        {/* =================================================
-            Detection Methodology
-        ================================================= */}
 
         <section className="methodology">
-
-          <h2>
-            Detection Methodology
-          </h2>
-
+          <h2>Detection Methodology</h2>
           <div className="method-grid">
-
-            <MethodCard
-              title="Z-Score"
-              description="Identifies marks with statistically unusual deviation from the overall distribution."
-            />
-
-            <MethodCard
-              title="IQR"
-              description="Detects observations outside the interquartile range based on deviation."
-            />
-
-            <MethodCard
-              title="Isolation Forest"
-              description="Uses machine learning to identify records that behave differently from normal patterns."
-            />
-
-            <MethodCard
-              title="Human Review"
-              description="The system recommends cases for review. Final moderation decisions remain with human experts."
-            />
-
+            <div className="method-card">
+              <h3>Statistical Detection</h3>
+              <p>Combines IQR, robust Z-score, and percentile-based indicators to flag unusual scores within assessment groups.</p>
+            </div>
+            <div className="method-card">
+              <h3>Isolation Forest</h3>
+              <p>Uses a separate unsupervised anomaly-detection model for each assessment type to account for differences between CMA, Exam, and TMA score patterns.</p>
+            </div>
+            <div className="method-card">
+              <h3>Moderation Engine</h3>
+              <p>Combines the two detection outputs and assigns a review priority based on the number of methods that flag a record.</p>
+            </div>
+            <div className="method-card">
+              <h3>Human Review</h3>
+              <p>The system highlights records for further investigation. A human moderator must examine context before making any moderation decision.</p>
+            </div>
           </div>
-
         </section>
-
       </main>
-
-    </div>
-  );
-}
-
-/* =========================================================
-   Stat Card
-========================================================= */
-
-function StatCard({
-  title,
-  value,
-  description,
-  type = "",
-}) {
-  return (
-    <div className={`stat-card ${type}`}>
-
-      <p className="stat-title">
-        {title}
-      </p>
-
-      <h3>
-        {value}
-      </h3>
-
-      <p className="stat-description">
-        {description}
-      </p>
-
-    </div>
-  );
-}
-
-/* =========================================================
-   Methodology Card
-========================================================= */
-
-function MethodCard({
-  title,
-  description,
-}) {
-  return (
-    <div className="method-card">
-
-      <h3>
-        {title}
-      </h3>
-
-      <p>
-        {description}
-      </p>
-
     </div>
   );
 }

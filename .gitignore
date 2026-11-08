@@ -1,4 +1,4 @@
-# Virtual environment
+# Virtual environments
 .venv/
 venv/
 env/
@@ -6,6 +6,10 @@ env/
 # Python cache
 __pycache__/
 *.py[cod]
+
+# Node
+node_modules/
+frontend/dist/
 
 # Environment variables
 .env
@@ -24,8 +28,18 @@ __pycache__/
 .DS_Store
 Thumbs.db
 
-# Logs
+# Logs and temporary files
 *.log
-
-# Temporary files
 *.tmp
+
+# Raw OULAD dataset (large source files)
+data/raw/OULAD/
+
+# Generated OULAD datasets and reports
+data/processed/oulad_*.csv
+data/processed/oulad_*.txt
+
+# Temporary backups
+*.backup
+*_backup.py
+README.local-backup.md

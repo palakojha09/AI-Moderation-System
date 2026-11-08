@@ -953,3 +953,83 @@ tbody tr:hover {
     grid-template-columns: 1fr;
   }
 }
+
+
+/* OULAD dashboard additions */
+.oulad-disclaimer {
+  margin-top: 10px;
+  padding: 10px 13px;
+  border-left: 3px solid #f59e0b;
+  background: #fffbeb;
+  color: #92400e;
+  border-radius: 5px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.oulad-source {
+  min-width: 145px;
+  font-size: 11px;
+  color: #475569;
+}
+.oulad-analysis-grid {
+  grid-template-columns: 1.4fr 1fr;
+}
+.oulad-summary-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+}
+.oulad-summary-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 13px;
+  border: 1px solid #e2e8f0;
+  border-radius: 9px;
+  background: #f8fafc;
+}
+.oulad-summary-row div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.oulad-summary-row div strong {
+  color: #172033;
+  font-size: 14px;
+}
+.oulad-summary-row span {
+  color: #64748b;
+  font-size: 11px;
+}
+.oulad-summary-row > strong {
+  color: #2563eb;
+  font-size: 17px;
+  white-space: nowrap;
+}
+.oulad-note {
+  margin-top: 14px;
+  color: #64748b;
+  font-size: 11px;
+  line-height: 1.5;
+}
+.analysis-search button:disabled {
+  opacity: 0.65;
+  cursor: wait;
+}
+.result-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+.result-title span {
+  color: #64748b;
+  font-size: 11px;
+}
+@media (max-width: 900px) {
+  .oulad-analysis-grid {
+    grid-template-columns: 1fr;
+  }
+}

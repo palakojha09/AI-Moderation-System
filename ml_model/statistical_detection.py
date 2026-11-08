@@ -1,206 +1,109 @@
+
+from pathlib import Path
 import pandas as pd
 import numpy as np
-from pathlib import Path
 
 
-INPUT_FILE = "data/processed/processed_marks.csv"
-OUTPUT_FILE = "data/processed/statistical_analysis.csv"
+BASE_DIR = Path(__file__).resolve().parent.parent
+
+PROCESSED_DIR = BASE_DIR / "data" / "processed"
+
+INPUT_FILE = PROCESSED_DIR / "oulad_featured_assessments.csv"
+
+OUTPUT_FILE = PROCESSED_DIR / "oulad_statistical_results.csv"
 
 
-# ============================================================
-# LOAD PROCESSED DATA
-# ============================================================
-
-df = pd.read_csv(INPUT_FILE)
-
-print("=" * 60)
-print("STATISTICAL ANOMALY DETECTION")
-print("=" * 60)
-
-print(f"\nInput records: {len(df)}")
+# Detection thresholds
+ROBUST_Z_THRESHOLD = 3.5
+LOW_PERCENTILE_THRESHOLD = 1.0
+HIGH_PERCENTILE_THRESHOLD = 99.0
 
 
-# ============================================================
-# Z-SCORE
-# ============================================================
+def detect_statistical_anomalies():
 
-deviation_mean = df["Deviation"].mean()
-deviation_std = df["Deviation"].std()
+    print("Loading featured OULAD dataset...")
 
-print(f"\nDeviation mean: {deviation_mean:.2f}")
-print(f"Deviation std : {deviation_std:.2f}")
+    df = pd.read_csv(INPUT_FILE, low_memory=False)
 
-
-if deviation_std == 0:
-    df["Z_Score"] = 0
-else:
-    df["Z_Score"] = (
-        (df["Deviation"] - deviation_mean)
-        / deviation_std
+    # IQR boundaries for each assessment
+    df["IQR_Lower_Bound"] = (
+        df["Assessment_Q1"] - 1.5 * df["Assessment_IQR"]
     )
 
+    df["IQR_Upper_Bound"] = (
+        df["Assessment_Q3"] + 1.5 * df["Assessment_IQR"]
+    )
 
-df["Z_Score"] = df["Z_Score"].round(3)
+    # IQR anomaly detection
+    df["IQR_Flag"] = (
+        (df["score"] < df["IQR_Lower_Bound"]) |
+        (df["score"] > df["IQR_Upper_Bound"])
+    )
 
+    # Robust Z-score detection
+    df["Robust_Z_Flag"] = (
+        df["Robust_Z_Score"].abs() >= ROBUST_Z_THRESHOLD
+    ).fillna(False)
 
-# ============================================================
-# Z-SCORE OUTLIER
-# ============================================================
+    # Extreme percentile detection
+    df["Percentile_Flag"] = (
+        (df["Score_Percentile"] <= LOW_PERCENTILE_THRESHOLD) |
+        (df["Score_Percentile"] >= HIGH_PERCENTILE_THRESHOLD)
+    )
 
-Z_THRESHOLD = 2.5
+    # Count available detection signals
+    df["Statistical_Anomaly_Score"] = (
+        df["IQR_Flag"].astype(int) +
+        df["Robust_Z_Flag"].astype(int) +
+        df["Percentile_Flag"].astype(int)
+    )
 
-df["Z_Score_Outlier"] = (
-    df["Z_Score"].abs() >= Z_THRESHOLD
-)
+    # Statistical anomaly recommendation
+    df["Statistical_Anomaly"] = (
+        df["Statistical_Anomaly_Score"] >= 2
+    )
 
+    # Direction of unusual score
+    df["Anomaly_Direction"] = np.select(
+        [
+            df["Statistical_Anomaly"] &
+            (df["Score_Deviation"] < 0),
 
-# ============================================================
-# IQR
-# ============================================================
+            df["Statistical_Anomaly"] &
+            (df["Score_Deviation"] > 0)
+        ],
+        [
+            "Unusually Low Score",
+            "Unusually High Score"
+        ],
+        default="No Significant Anomaly"
+    )
 
-Q1 = df["Deviation"].quantile(0.25)
-Q3 = df["Deviation"].quantile(0.75)
+    # Save results
+    df.to_csv(OUTPUT_FILE, index=False)
 
-IQR = Q3 - Q1
+    print("\nSTATISTICAL DETECTION SUMMARY")
+    print("-" * 45)
 
-lower_bound = Q1 - 1.5 * IQR
-upper_bound = Q3 + 1.5 * IQR
+    print("Total records:", len(df))
 
+    print("IQR anomalies:", df["IQR_Flag"].sum())
 
-print("\nIQR statistics:")
-print(f"Q1          : {Q1:.2f}")
-print(f"Q3          : {Q3:.2f}")
-print(f"IQR         : {IQR:.2f}")
-print(f"Lower bound : {lower_bound:.2f}")
-print(f"Upper bound : {upper_bound:.2f}")
+    print("Robust Z-score anomalies:", df["Robust_Z_Flag"].sum())
 
+    print("Percentile anomalies:", df["Percentile_Flag"].sum())
 
-# ============================================================
-# IQR OUTLIER
-# ============================================================
+    print(
+        "Combined statistical anomalies:",
+        df["Statistical_Anomaly"].sum()
+    )
 
-df["IQR_Outlier"] = (
-    (df["Deviation"] < lower_bound)
-    | (df["Deviation"] > upper_bound)
-)
+    print("\nAnomaly direction:")
+    print(df["Anomaly_Direction"].value_counts())
 
-
-# ============================================================
-# COMBINED STATISTICAL FLAG
-# ============================================================
-
-df["Statistical_Anomaly"] = (
-    df["Z_Score_Outlier"]
-    | df["IQR_Outlier"]
-)
-
-
-# ============================================================
-# ANOMALY SCORE
-# ============================================================
-
-df["Statistical_Anomaly_Score"] = (
-    df["Z_Score"].abs()
-)
-
-
-# ============================================================
-# SAVE RESULT
-# ============================================================
-
-output_path = Path(OUTPUT_FILE)
-
-output_path.parent.mkdir(
-    parents=True,
-    exist_ok=True,
-)
-
-df.to_csv(
-    output_path,
-    index=False,
-)
+    print("\nOutput saved to:")
+    print(OUTPUT_FILE)
 
 
-# ============================================================
-# SUMMARY
-# ============================================================
-
-print("\nDetection summary:")
-
-print(
-    f"Z-score outliers : "
-    f"{df['Z_Score_Outlier'].sum()}"
-)
-
-print(
-    f"IQR outliers     : "
-    f"{df['IQR_Outlier'].sum()}"
-)
-
-print(
-    f"Statistical anomalies : "
-    f"{df['Statistical_Anomaly'].sum()}"
-)
-
-
-# ============================================================
-# COMPARE WITH INJECTED GROUND TRUTH
-# ============================================================
-
-if "Injected_Anomaly" in df.columns:
-
-    injected = df["Injected_Anomaly"]
-
-    detected = df["Statistical_Anomaly"]
-
-    true_positives = (
-        injected & detected
-    ).sum()
-
-    false_positives = (
-        ~injected & detected
-    ).sum()
-
-    false_negatives = (
-        injected & ~detected
-    ).sum()
-
-    print("\nGround-truth comparison:")
-    print(f"True positives  : {true_positives}")
-    print(f"False positives : {false_positives}")
-    print(f"False negatives : {false_negatives}")
-
-
-# ============================================================
-# SHOW MOST EXTREME RECORDS
-# ============================================================
-
-print("\nTop 10 largest absolute deviations:")
-
-columns_to_show = [
-    "Student_ID",
-    "Subject",
-    "Faculty_ID",
-    "Given_Marks",
-    "Expected_Marks",
-    "Deviation",
-    "Deviation_Percentage",
-    "Z_Score",
-    "IQR_Outlier",
-    "Injected_Anomaly",
-    "Anomaly_Type",
-]
-
-print(
-    df.loc[
-        df["Absolute_Deviation"]
-        .nlargest(10)
-        .index,
-        columns_to_show,
-    ].to_string(index=False)
-)
-
-
-print("\n" + "=" * 60)
-print("STATISTICAL ANALYSIS COMPLETE")
-print("=" * 60)
+if __name__ == "__main__":
+    detect_statistical_anomalies()
