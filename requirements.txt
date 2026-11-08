@@ -5,6 +5,7 @@ matplotlib
 plotly
 openpyxl
 flask
+flask-cors
 streamlit
 requests
 reportlab
